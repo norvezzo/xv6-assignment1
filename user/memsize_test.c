@@ -7,7 +7,7 @@ int main() {
   void *p = malloc(20000);
   if(p == 0){
     printf("Failed to allocate memory\n");
-    exit(1);
+    exit(1, "");
   }
 
   printf("After malloc: %d bytes\n", memsize());
@@ -16,5 +16,5 @@ int main() {
 
   printf("After free: %d bytes\n", memsize());
 
-  exit(0);
+  exit(0, "");
 }
