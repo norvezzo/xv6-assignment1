@@ -689,3 +689,166 @@ procdump(void)
     printf("\n");
   }
 }
+
+int
+forkn(int n, uint64 pids_addr)
+{
+  if (n < 1 || n > 16)
+    return -1;
+
+  struct proc *p = myproc();
+  struct proc *children[16];
+  int pids[16];
+  int created = 0;
+
+  for (int i = 0; i < n; i++) {
+    struct proc *np = allocproc();
+    if (np == 0) {
+      // Cleanup previously allocated children
+      for (int j = 0; j < created; j++) {
+        freeproc(children[j]);
+        release(&children[j]->lock);
+      }
+      return -1;
+    } 
+
+    // Memory copy
+    if (uvmcopy(p->pagetable, np->pagetable, p->sz) < 0) {
+      freeproc(np);
+      release(&np->lock);
+      for (int j = 0; j < created; j++) {
+        freeproc(children[j]);
+        release(&children[j]->lock);
+      }
+      return -1;
+    }
+
+    np->sz = p->sz;
+    *(np->trapframe) = *(p->trapframe);
+    np->trapframe->a0 = i + 1;
+
+    // Duplicate file descriptors
+    for (int fd = 0; fd < NOFILE; fd++) {
+      if (p->ofile[fd]) {
+        np->ofile[fd] = filedup(p->ofile[fd]);
+        if (np->ofile[fd] == 0) {
+          freeproc(np);
+          release(&np->lock);
+          for (int j = 0; j < created; j++) {
+            freeproc(children[j]);
+            release(&children[j]->lock);
+          }
+          return -1;
+        }
+      }
+    }
+
+    // Duplicate working directory
+    np->cwd = idup(p->cwd);
+    if (np->cwd == 0) {
+      freeproc(np);
+      release(&np->lock);
+      for (int j = 0; j < created; j++) {
+        freeproc(children[j]);
+        release(&children[j]->lock);
+      }
+      return -1;
+    }
+
+    safestrcpy(np->name, p->name, sizeof(p->name));
+
+    acquire(&wait_lock);
+    np->parent = p;
+    release(&wait_lock);
+
+    children[created] = np;
+    pids[created] = np->pid;
+    created++;
+    np->state = USED;
+    release(&np->lock);
+  }
+
+  // Copy PIDs array to userspace
+  if (copyout(p->pagetable, pids_addr, (char *)pids, n * sizeof(int)) < 0) {
+    for (int j = 0; j < created; j++) {
+      freeproc(children[j]);
+      release(&children[j]->lock);
+    }
+    return -1;
+  }
+
+  // All children created
+  for (int j = 0; j < created; j++) {
+    acquire(&children[j]->lock);
+    children[j]->state = RUNNABLE;
+    release(&children[j]->lock);
+  }
+
+  return 0;
+}
+
+int
+waitall(uint64 n_addr, uint64 statuses_addr)
+{
+  struct proc *p = myproc();
+  struct proc *pp;
+  int exited = 0;
+  int statuses[NPROC];
+
+  acquire(&wait_lock);
+
+  for (;;) {
+    int found_live_child = 0;
+
+    for (pp = proc; pp < &proc[NPROC]; pp++) {
+      if (pp->parent != p)
+        continue;
+
+      acquire(&pp->lock);
+
+      if (pp->state == ZOMBIE) {
+        // Collect exit status
+        statuses[exited++] = pp->xstate;
+
+        // Reap the child
+        freeproc(pp);
+        release(&pp->lock);
+      } else {
+        // Child still running
+        release(&pp->lock);
+        found_live_child = 1;
+      }
+    }
+
+    if (found_live_child == 0) {
+      int zero = 0;
+    
+      if (exited == 0) {
+        // No children at all
+        if (copyout(p->pagetable, n_addr, (char *)&zero, sizeof(int)) < 0) {
+          release(&wait_lock);
+          return -1;
+        }
+        release(&wait_lock);
+        return 0;
+      }
+    
+      // We reaped some children
+      if (copyout(p->pagetable, n_addr, (char *)&exited, sizeof(int)) < 0) {
+        release(&wait_lock);
+        return -1;
+      }
+    
+      if (copyout(p->pagetable, statuses_addr, (char *)statuses, exited * sizeof(int)) < 0) {
+        release(&wait_lock);
+        return -1;
+      }
+    
+      release(&wait_lock);
+      return 0;
+    }
+
+    // Wait for more children to exit
+    sleep(p, &wait_lock);
+  }
+}

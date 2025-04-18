@@ -106,3 +106,26 @@ sys_memsize(void)
 {
   return myproc()->sz;
 }
+
+uint64
+sys_forkn(void)
+{
+  int n;
+  uint64 pids_addr;
+
+  argint(0, &n);
+  argaddr(1, &pids_addr);
+
+  return forkn(n, pids_addr);
+}
+
+uint64
+sys_waitall(void)
+{
+  uint64 n_addr, statuses_addr;
+
+  argaddr(0, &n_addr);
+  argaddr(1, &statuses_addr);
+
+  return waitall(n_addr, statuses_addr);
+}
