@@ -5,7 +5,7 @@
 #define PARTS 4
 #define CHUNK (SIZE / PARTS)
 
-int array[SIZE];
+int array[SIZE]; // Must be global, otherwise crashing
 
 int main() {
   int pids[PARTS];
