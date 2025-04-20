@@ -37,10 +37,7 @@ sys_wait(void)
 {
   uint64 status_ptr, msg_ptr;
 
-  // Get first argument: int *status
   argaddr(0, &status_ptr);
-
-  // Get second argument: char *exit_msg
   argaddr(1, &msg_ptr);
 
   return wait(status_ptr, msg_ptr);
