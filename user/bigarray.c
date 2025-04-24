@@ -46,7 +46,7 @@ int main() {
     for (int i = start; i < end; i++) {
       sum += array[i];
     }
-    sleep(index * 10); // Printing the children in order
+    sleep(index * 5); // Printing the children in order
     printf("Child #%d (PID = %d) sum: %d\n", ret, getpid(), sum);
     exit(sum, "");
   }
